@@ -29,13 +29,7 @@ if arquivo:
     coluna_longitude = st.sidebar.selectbox("Coluna de Longitude", colunas, index=colunas.index("Longitude") if "Longitude" in colunas else 0)
 
     df[coluna_data] = pd.to_datetime(df[coluna_data], errors="coerce", dayfirst=True)
-    df[coluna_km] = pd.to_numeric(df[coluna_km], errors="coerce")
-
-    # Ajuste Maxtrack:
-    # O odômetro vem com 3 casas a mais.
-    # Exemplo: 87178200 vira 87178,2 km
-    df[coluna_km] = df[coluna_km] / 1000
-
+    df[coluna_km] = pd.to_numeric(df[coluna_km], errors="coerce") / 1000
     df[coluna_latitude] = pd.to_numeric(df[coluna_latitude], errors="coerce")
     df[coluna_longitude] = pd.to_numeric(df[coluna_longitude], errors="coerce")
 
@@ -77,26 +71,33 @@ if arquivo:
     df["Data anterior"] = df.groupby(coluna_frota)[coluna_data].shift(1)
 
     df["KM Rodado Evento"] = df[coluna_km] - df["KM anterior"]
-
     df.loc[df["KM Rodado Evento"] < 0, "KM Rodado Evento"] = 0
     df.loc[df["KM Rodado Evento"] > 300, "KM Rodado Evento"] = 0
 
-    regra_mandacaia = (
+    referencias_troca = (
         df[coluna_referencia].str.contains("TELÊMACO - MANDAÇAIA", na=False)
-        & df[coluna_macro].isin(["FIM DE JORNADA", "TROCA DE MOTORISTA"])
+        | df[coluna_referencia].str.contains("TELEMACO - MANDACAIA", na=False)
+        | df[coluna_referencia].str.contains("ROTA - TELEMACO/PUMA", na=False)
+        | df[coluna_referencia].str.contains("RDV - CLIENTE", na=False)
     )
 
+    macros_troca = df[coluna_macro].isin([
+        "FIM DE JORNADA",
+        "TROCA DE MOTORISTA"
+    ])
+
+    regra_troca = referencias_troca & macros_troca
     regra_garagem = df[coluna_referencia].str.contains("GARAGEM - BBM", na=False)
 
     df["Tipo KM Morto"] = "Não conta"
-    df.loc[regra_mandacaia, "Tipo KM Morto"] = "Troca em Mandaçaia"
+    df.loc[regra_troca, "Tipo KM Morto"] = "Troca em ponto operacional"
     df.loc[regra_garagem, "Tipo KM Morto"] = "Retorno Garagem BBM"
 
     df_km = df[df["Tipo KM Morto"] != "Não conta"].copy()
 
     eventos_total = len(df_km)
     km_total = df_km["KM Rodado Evento"].sum()
-    km_mandacaia = df_km[df_km["Tipo KM Morto"] == "Troca em Mandaçaia"]["KM Rodado Evento"].sum()
+    km_troca = df_km[df_km["Tipo KM Morto"] == "Troca em ponto operacional"]["KM Rodado Evento"].sum()
     km_garagem = df_km[df_km["Tipo KM Morto"] == "Retorno Garagem BBM"]["KM Rodado Evento"].sum()
 
     st.divider()
@@ -105,7 +106,7 @@ if arquivo:
 
     col1.metric("🚛 Eventos KM Morto", f"{eventos_total}")
     col2.metric("🛣️ KM Morto Total", f"{km_total:,.0f} km".replace(",", "."))
-    col3.metric("🏁 KM Mandaçaia", f"{km_mandacaia:,.0f} km".replace(",", "."))
+    col3.metric("🏁 KM Trocas", f"{km_troca:,.0f} km".replace(",", "."))
     col4.metric("🏢 KM Garagem BBM", f"{km_garagem:,.0f} km".replace(",", "."))
 
     st.divider()
