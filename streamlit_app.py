@@ -24,6 +24,7 @@ if arquivo:
     coluna_motorista = st.sidebar.selectbox("Coluna de Motorista", colunas, index=colunas.index("Nome do motorista") if "Nome do motorista" in colunas else 0)
     coluna_macro = st.sidebar.selectbox("Coluna de Macro", colunas, index=colunas.index("Tela") if "Tela" in colunas else 0)
     coluna_referencia = st.sidebar.selectbox("Coluna de Referência", colunas, index=colunas.index("Referência") if "Referência" in colunas else 0)
+    coluna_local = st.sidebar.selectbox("Coluna de Local", colunas, index=colunas.index("Local") if "Local" in colunas else 0)
     coluna_km = st.sidebar.selectbox("Coluna de Odômetro / KM", colunas, index=colunas.index("Odômetro") if "Odômetro" in colunas else 0)
     coluna_latitude = st.sidebar.selectbox("Coluna de Latitude", colunas, index=colunas.index("Latitude") if "Latitude" in colunas else 0)
     coluna_longitude = st.sidebar.selectbox("Coluna de Longitude", colunas, index=colunas.index("Longitude") if "Longitude" in colunas else 0)
@@ -37,6 +38,7 @@ if arquivo:
 
     df[coluna_macro] = df[coluna_macro].astype(str).str.upper().str.strip()
     df[coluna_referencia] = df[coluna_referencia].astype(str).str.upper().str.strip()
+    df[coluna_local] = df[coluna_local].astype(str).str.upper().str.strip()
 
     st.sidebar.header("🔎 Filtros")
 
@@ -87,11 +89,26 @@ if arquivo:
     ])
 
     regra_troca = referencias_troca & macros_troca
+
     regra_garagem = df[coluna_referencia].str.contains("GARAGEM - BBM", na=False)
+
+    regra_mecanica = (
+        df[coluna_referencia].str.contains(
+            "MECANICA|MECÂNICA|OFICINA|MANUTENCAO|MANUTENÇÃO|BORRACHARIA",
+            na=False,
+            regex=True
+        )
+        | df[coluna_local].str.contains(
+            "MECANICA|MECÂNICA|OFICINA|MANUTENCAO|MANUTENÇÃO|BORRACHARIA",
+            na=False,
+            regex=True
+        )
+    )
 
     df["Tipo KM Morto"] = "Não conta"
     df.loc[regra_troca, "Tipo KM Morto"] = "Troca em ponto operacional"
     df.loc[regra_garagem, "Tipo KM Morto"] = "Retorno Garagem BBM"
+    df.loc[regra_mecanica, "Tipo KM Morto"] = "Mecânica / Oficina"
 
     df_km = df[df["Tipo KM Morto"] != "Não conta"].copy()
 
@@ -99,15 +116,17 @@ if arquivo:
     km_total = df_km["KM Rodado Evento"].sum()
     km_troca = df_km[df_km["Tipo KM Morto"] == "Troca em ponto operacional"]["KM Rodado Evento"].sum()
     km_garagem = df_km[df_km["Tipo KM Morto"] == "Retorno Garagem BBM"]["KM Rodado Evento"].sum()
+    km_mecanica = df_km[df_km["Tipo KM Morto"] == "Mecânica / Oficina"]["KM Rodado Evento"].sum()
 
     st.divider()
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    col1.metric("🚛 Eventos KM Morto", f"{eventos_total}")
-    col2.metric("🛣️ KM Morto Total", f"{km_total:,.0f} km".replace(",", "."))
+    col1.metric("🚛 Eventos", f"{eventos_total}")
+    col2.metric("🛣️ KM Total", f"{km_total:,.0f} km".replace(",", "."))
     col3.metric("🏁 KM Trocas", f"{km_troca:,.0f} km".replace(",", "."))
-    col4.metric("🏢 KM Garagem BBM", f"{km_garagem:,.0f} km".replace(",", "."))
+    col4.metric("🏢 KM Garagem", f"{km_garagem:,.0f} km".replace(",", "."))
+    col5.metric("🔧 KM Mecânica", f"{km_mecanica:,.0f} km".replace(",", "."))
 
     st.divider()
 
@@ -159,6 +178,21 @@ if arquivo:
         )
         st.plotly_chart(fig_frota, use_container_width=True)
 
+    st.subheader("🔧 Ranking da mecânica / oficina")
+
+    ranking_mecanica = (
+        df_km[df_km["Tipo KM Morto"] == "Mecânica / Oficina"]
+        .groupby([coluna_frota, coluna_referencia])
+        .agg(
+            Eventos=("Tipo KM Morto", "count"),
+            KM_Total=("KM Rodado Evento", "sum")
+        )
+        .reset_index()
+        .sort_values("KM_Total", ascending=False)
+    )
+
+    st.dataframe(ranking_mecanica, use_container_width=True)
+
     st.subheader("👤 Ranking por motorista")
 
     ranking_motorista = (
@@ -187,7 +221,7 @@ if arquivo:
 
     st.dataframe(ranking_ref, use_container_width=True)
 
-    st.subheader("🗺️ Mapa de calor dos pontos de KM morto")
+    st.subheader("🗺️ Mapa de calor separado por tipo")
 
     df_mapa = df_km.dropna(subset=[coluna_latitude, coluna_longitude]).copy()
 
@@ -204,11 +238,39 @@ if arquivo:
             },
             zoom=8,
             mapbox_style="open-street-map",
-            title="Mapa de calor por KM morto"
+            facet_col="Tipo KM Morto",
+            title="Mapa de calor por tipo de KM morto"
         )
         st.plotly_chart(fig_mapa, use_container_width=True)
     else:
         st.warning("Não foi possível gerar o mapa. Verifique Latitude e Longitude.")
+
+    st.subheader("📍 Mapa de pontos por categoria")
+
+    if not df_mapa.empty:
+        fig_pontos = px.scatter_mapbox(
+            df_mapa,
+            lat=coluna_latitude,
+            lon=coluna_longitude,
+            color="Tipo KM Morto",
+            size="KM Rodado Evento",
+            hover_name=coluna_frota,
+            hover_data=[
+                coluna_motorista,
+                coluna_macro,
+                coluna_referencia,
+                coluna_local,
+                "KM Rodado Evento"
+            ],
+            zoom=8,
+            center={
+                "lat": df_mapa[coluna_latitude].mean(),
+                "lon": df_mapa[coluna_longitude].mean()
+            },
+            mapbox_style="open-street-map",
+            title="Pontos classificados: Garagem, Troca e Mecânica"
+        )
+        st.plotly_chart(fig_pontos, use_container_width=True)
 
     st.subheader("📋 Eventos encontrados")
 
@@ -218,6 +280,7 @@ if arquivo:
         coluna_motorista,
         coluna_macro,
         coluna_referencia,
+        coluna_local,
         coluna_km,
         "KM anterior",
         "KM Rodado Evento",
