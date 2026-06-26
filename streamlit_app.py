@@ -92,17 +92,15 @@ if arquivo:
 
     regra_garagem = df[coluna_referencia].str.contains("GARAGEM - BBM", na=False)
 
+    palavras_mecanica = (
+        "MECANICA|MECÂNICA|OFICINA|MANUTENCAO|MANUTENÇÃO|BORRACHARIA|"
+        "AUTO ELETRICA|AUTO ELÉTRICA|LOPES|LOBASCZ|MECANICO|MECÂNICO|"
+        "MANUT|PNEU|PNEUS|LAVADOR|POSTO"
+    )
+
     regra_mecanica = (
-        df[coluna_referencia].str.contains(
-            "MECANICA|MECÂNICA|OFICINA|MANUTENCAO|MANUTENÇÃO|BORRACHARIA",
-            na=False,
-            regex=True
-        )
-        | df[coluna_local].str.contains(
-            "MECANICA|MECÂNICA|OFICINA|MANUTENCAO|MANUTENÇÃO|BORRACHARIA",
-            na=False,
-            regex=True
-        )
+        df[coluna_referencia].str.contains(palavras_mecanica, na=False, regex=True)
+        | df[coluna_local].str.contains(palavras_mecanica, na=False, regex=True)
     )
 
     df["Tipo KM Morto"] = "Não conta"
@@ -135,10 +133,7 @@ if arquivo:
     ranking_base = (
         df_km[df_km["Tipo KM Morto"] == "Retorno Garagem BBM"]
         .groupby(coluna_frota)
-        .agg(
-            Eventos=("Tipo KM Morto", "count"),
-            KM_Total=("KM Rodado Evento", "sum")
-        )
+        .agg(Eventos=("Tipo KM Morto", "count"), KM_Total=("KM Rodado Evento", "sum"))
         .reset_index()
         .sort_values("KM_Total", ascending=False)
     )
@@ -146,22 +141,14 @@ if arquivo:
     st.dataframe(ranking_base, use_container_width=True)
 
     if not ranking_base.empty:
-        fig_base = px.bar(
-            ranking_base,
-            x=coluna_frota,
-            y="KM_Total",
-            title="KM morto por retorno à Garagem BBM"
-        )
+        fig_base = px.bar(ranking_base, x=coluna_frota, y="KM_Total", title="KM morto por retorno à Garagem BBM")
         st.plotly_chart(fig_base, use_container_width=True)
 
     st.subheader("📊 Ranking geral por frota")
 
     ranking_frota = (
         df_km.groupby([coluna_frota, "Tipo KM Morto"])
-        .agg(
-            Eventos=("Tipo KM Morto", "count"),
-            KM_Total=("KM Rodado Evento", "sum")
-        )
+        .agg(Eventos=("Tipo KM Morto", "count"), KM_Total=("KM Rodado Evento", "sum"))
         .reset_index()
         .sort_values("KM_Total", ascending=False)
     )
@@ -183,10 +170,7 @@ if arquivo:
     ranking_mecanica = (
         df_km[df_km["Tipo KM Morto"] == "Mecânica / Oficina"]
         .groupby([coluna_frota, coluna_referencia])
-        .agg(
-            Eventos=("Tipo KM Morto", "count"),
-            KM_Total=("KM Rodado Evento", "sum")
-        )
+        .agg(Eventos=("Tipo KM Morto", "count"), KM_Total=("KM Rodado Evento", "sum"))
         .reset_index()
         .sort_values("KM_Total", ascending=False)
     )
@@ -197,10 +181,7 @@ if arquivo:
 
     ranking_motorista = (
         df_km.groupby([coluna_motorista, "Tipo KM Morto"])
-        .agg(
-            Eventos=("Tipo KM Morto", "count"),
-            KM_Total=("KM Rodado Evento", "sum")
-        )
+        .agg(Eventos=("Tipo KM Morto", "count"), KM_Total=("KM Rodado Evento", "sum"))
         .reset_index()
         .sort_values("KM_Total", ascending=False)
     )
@@ -211,17 +192,14 @@ if arquivo:
 
     ranking_ref = (
         df_km.groupby([coluna_referencia, "Tipo KM Morto"])
-        .agg(
-            Eventos=("Tipo KM Morto", "count"),
-            KM_Total=("KM Rodado Evento", "sum")
-        )
+        .agg(Eventos=("Tipo KM Morto", "count"), KM_Total=("KM Rodado Evento", "sum"))
         .reset_index()
         .sort_values("KM_Total", ascending=False)
     )
 
     st.dataframe(ranking_ref, use_container_width=True)
 
-    st.subheader("🗺️ Mapa de calor separado por tipo")
+    st.subheader("🗺️ Mapa de calor geral")
 
     df_mapa = df_km.dropna(subset=[coluna_latitude, coluna_longitude]).copy()
 
@@ -231,15 +209,14 @@ if arquivo:
             lat=coluna_latitude,
             lon=coluna_longitude,
             z="KM Rodado Evento",
-            radius=15,
+            radius=18,
             center={
                 "lat": df_mapa[coluna_latitude].mean(),
                 "lon": df_mapa[coluna_longitude].mean()
             },
             zoom=8,
             mapbox_style="open-street-map",
-            facet_col="Tipo KM Morto",
-            title="Mapa de calor por tipo de KM morto"
+            title="Mapa de calor geral por KM morto"
         )
         st.plotly_chart(fig_mapa, use_container_width=True)
     else:
