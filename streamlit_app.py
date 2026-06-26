@@ -24,10 +24,20 @@ if arquivo:
     coluna_motorista = st.sidebar.selectbox("Coluna de Motorista", colunas, index=colunas.index("Nome do motorista") if "Nome do motorista" in colunas else 0)
     coluna_macro = st.sidebar.selectbox("Coluna de Macro", colunas, index=colunas.index("Tela") if "Tela" in colunas else 0)
     coluna_referencia = st.sidebar.selectbox("Coluna de Referência", colunas, index=colunas.index("Referência") if "Referência" in colunas else 0)
-    coluna_km = st.sidebar.selectbox("Coluna de Hodômetro / KM", colunas, index=colunas.index("Hodômetro") if "Hodômetro" in colunas else 0)
+    coluna_km = st.sidebar.selectbox("Coluna de Odômetro / KM", colunas, index=colunas.index("Odômetro") if "Odômetro" in colunas else 0)
+    coluna_latitude = st.sidebar.selectbox("Coluna de Latitude", colunas, index=colunas.index("Latitude") if "Latitude" in colunas else 0)
+    coluna_longitude = st.sidebar.selectbox("Coluna de Longitude", colunas, index=colunas.index("Longitude") if "Longitude" in colunas else 0)
 
     df[coluna_data] = pd.to_datetime(df[coluna_data], errors="coerce", dayfirst=True)
     df[coluna_km] = pd.to_numeric(df[coluna_km], errors="coerce")
+
+    # Ajuste Maxtrack:
+    # O odômetro vem com 3 casas a mais.
+    # Exemplo: 87178200 vira 87178,2 km
+    df[coluna_km] = df[coluna_km] / 1000
+
+    df[coluna_latitude] = pd.to_numeric(df[coluna_latitude], errors="coerce")
+    df[coluna_longitude] = pd.to_numeric(df[coluna_longitude], errors="coerce")
 
     df = df.dropna(subset=[coluna_data, coluna_km])
 
@@ -59,7 +69,6 @@ if arquivo:
     if frota_selecionada:
         df = df[df[coluna_frota].astype(str).isin(frota_selecionada)]
 
-    # Ordenar para calcular km entre eventos
     df = df.sort_values([coluna_frota, coluna_data]).copy()
 
     df["KM anterior"] = df.groupby(coluna_frota)[coluna_km].shift(1)
@@ -139,6 +148,67 @@ if arquivo:
 
     st.dataframe(ranking_frota, use_container_width=True)
 
+    if not ranking_frota.empty:
+        fig_frota = px.bar(
+            ranking_frota,
+            x=coluna_frota,
+            y="KM_Total",
+            color="Tipo KM Morto",
+            title="KM morto por frota"
+        )
+        st.plotly_chart(fig_frota, use_container_width=True)
+
+    st.subheader("👤 Ranking por motorista")
+
+    ranking_motorista = (
+        df_km.groupby([coluna_motorista, "Tipo KM Morto"])
+        .agg(
+            Eventos=("Tipo KM Morto", "count"),
+            KM_Total=("KM Rodado Evento", "sum")
+        )
+        .reset_index()
+        .sort_values("KM_Total", ascending=False)
+    )
+
+    st.dataframe(ranking_motorista, use_container_width=True)
+
+    st.subheader("📍 Ranking por referência")
+
+    ranking_ref = (
+        df_km.groupby([coluna_referencia, "Tipo KM Morto"])
+        .agg(
+            Eventos=("Tipo KM Morto", "count"),
+            KM_Total=("KM Rodado Evento", "sum")
+        )
+        .reset_index()
+        .sort_values("KM_Total", ascending=False)
+    )
+
+    st.dataframe(ranking_ref, use_container_width=True)
+
+    st.subheader("🗺️ Mapa de calor dos pontos de KM morto")
+
+    df_mapa = df_km.dropna(subset=[coluna_latitude, coluna_longitude]).copy()
+
+    if not df_mapa.empty:
+        fig_mapa = px.density_mapbox(
+            df_mapa,
+            lat=coluna_latitude,
+            lon=coluna_longitude,
+            z="KM Rodado Evento",
+            radius=15,
+            center={
+                "lat": df_mapa[coluna_latitude].mean(),
+                "lon": df_mapa[coluna_longitude].mean()
+            },
+            zoom=8,
+            mapbox_style="open-street-map",
+            title="Mapa de calor por KM morto"
+        )
+        st.plotly_chart(fig_mapa, use_container_width=True)
+    else:
+        st.warning("Não foi possível gerar o mapa. Verifique Latitude e Longitude.")
+
     st.subheader("📋 Eventos encontrados")
 
     colunas_mostrar = [
@@ -152,10 +222,21 @@ if arquivo:
         "KM Rodado Evento",
         "Tipo KM Morto",
         "Referência anterior",
-        "Macro anterior"
+        "Macro anterior",
+        coluna_latitude,
+        coluna_longitude
     ]
 
     st.dataframe(df_km[colunas_mostrar], use_container_width=True)
+
+    arquivo_exportar = df_km.to_csv(index=False, sep=";").encode("utf-8-sig")
+
+    st.download_button(
+        label="⬇️ Baixar eventos em CSV",
+        data=arquivo_exportar,
+        file_name="eventos_km_morto.csv",
+        mime="text/csv"
+    )
 
 else:
     st.info("Envie o relatório de macros para começar.")
